@@ -1,8 +1,9 @@
 -module(server).
--export([start/1,day_of_the_week/3,month/1]).
+-export([start/1]).
 
 start(Port) ->
     {ok, LSock} = gen_tcp:listen(Port, [{reuseaddr,true},binary,{backlog,1024}]),
+    %% spawn proses baru untuk accept connection/request
     spawn(fun() -> accept(LSock) end),
     receive 
         stop -> 
@@ -12,6 +13,7 @@ start(Port) ->
 accept(LSock) ->
     {ok, Sock} = gen_tcp:accept(LSock),
     ok = inet:setopts(Sock, [{packet,raw}]),
+    %% spawn proses baru untuk accept connection/request
     spawn(fun() -> accept(LSock) end),
     serve(Sock).
 
@@ -43,13 +45,13 @@ serve(Sock) ->
             _ ->
                 ok = gen_tcp:send(Sock, [binary_to_list(Ver),
                         " 501 Not Implemented\r\nContent-type: text/plain; charset=UTF-8\r\nContent-length: ",
-                        integer_to_list(byte_size(<<"501​ Not​ Implemented:​ Reason:​ OPTION">>)),
-                        "\r\nConnection: close\r\n\r\n501​ Not​ Implemented:​ Reason:​ OPTION"])
+                        integer_to_list(byte_size(<<"501​ Not​ Implemented:​ Reason:​ OPTION\r\n">>)),
+                        "\r\nConnection: close\r\n\r\n501​ Not​ Implemented:​ Reason:​ OPTION\r\n"])
         end
     catch _:_ ->
         ok = gen_tcp:send(Sock, ["HTTP/1.0 400 Bad Request\r\nContent-type: text/plain; charset=UTF-8\r\nContent-length: ",
-                        integer_to_list(byte_size(<<"400 Bad Request">>)),
-                        "\r\nConnection: close\r\n\r\n400 Bad Request"])
+                        integer_to_list(byte_size(<<"400 Bad Request\r\n">>)),
+                        "\r\nConnection: close\r\n\r\n400 Bad Request\r\n"])
     end,
     gen_tcp:close(Sock).
 
@@ -103,38 +105,38 @@ response(_Sock, Req) ->
                     {"200 OK", RespHdrs, binary_to_list(File)};
                 _ ->
                     RespHdrs = [{"Content-Type","text/plain; charset=UTF-8"},
-                                {"Content-Length",integer_to_list(byte_size("400 Bad Request"))},
+                                {"Content-Length",integer_to_list(byte_size(<<"400 Bad Request\r\n">>))},
                                 {"Connection","close"}],
-                    {"400 Bad Request", RespHdrs, "400 Bad Request"}
+                    {"400 Bad Request", RespHdrs, "400 Bad Request\r\n"}
             end;    
         {<<"GET">>,<<"/info?type=", Rest/binary>>} ->
             case Rest of 
                 <<"time">> ->
                     {{Year, Month, Day}, {Hour, Minute, Second}} = calendar:now_to_local_time(erlang:now()),
                     Content = lists:flatten(io_lib:format(
-                        "~s ~s ~2..0w ~2..0w:~2..0w:~2..0w WIB ~4..0w",
+                        "~s ~s ~2..0w ~2..0w:~2..0w:~2..0w WIB ~4..0w\r\n",
                         [day_of_the_week(Year, Month, Day), month(Month), Day, Hour, Minute, Second, Year])),
                     RespHdrs = [{"Content-Type","text/plain; charset=UTF-8"},
                                 {"Content-Length",integer_to_list(byte_size(list_to_binary(Content)))},
                                 {"Connection","close"}],
-                    {"200 OK", RespHdrs, Content};
-                {<<"random">>} ->
+                    {"200 OK", RespHdrs, [Content,"\r\n"]};
+                <<"random">> ->
                     Content = rand:uniform(4294967296)-2147483649,
                     RespHdrs = [{"Content-Type","text/plain; charset=UTF-8"},
-                                {"Content-Length",integer_to_list(byte_size(integer_to_binary(Content)))},
+                                {"Content-Length",integer_to_list(byte_size(integer_to_binary(Content))+2)},
                                 {"Connection","close"}],
-                    {"200 OK", RespHdrs, integer_to_list(Content)};
+                    {"200 OK", RespHdrs, [integer_to_list(Content),"\r\n"]};
                 _ ->
                     RespHdrs = [{"Content-Type","text/plain; charset=UTF-8"},
-                                {"Content-Length",integer_to_list(byte_size(<<"No Data">>))},
+                                {"Content-Length",integer_to_list(byte_size(<<"No Data\r\n">>))},
                                 {"Connection","close"}],
-                    {"200 OK", RespHdrs, "No Data"}
+                    {"200 OK", RespHdrs, "No Data\r\n"}
             end;
         _ ->
             RespHdrs = [{"Content-Type","text/plain; charset=UTF-8"},
-                        {"Content-Length",integer_to_list(byte_size("404 Not Found"))},
+                        {"Content-Length",integer_to_list(byte_size(<<"404 Not Found\r\n">>))},
                         {"Connection","close"}],
-            {"404 Not Found", RespHdrs, "404 Not Found"}
+            {"404 Not Found", RespHdrs, "404 Not Found\r\n"}
     end.
 
 day_of_the_week(Year, Month, Day) ->   
